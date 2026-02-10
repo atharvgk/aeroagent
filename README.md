@@ -1,8 +1,8 @@
-# 🚁 Skylark - AI Drone Operations Coordinator
+# Skylark - AI Drone Operations Coordinator
 
 Skylark is an intelligent agent designed to help operations teams manage drone fleets, pilots, and missions. It uses a **Hybrid AI Architecture** combining the natural language understanding of LLMs with the safety and precision of deterministic code.
 
-## 🌟 Features
+## Features
 - **Natural Language Command:** "Assign Pilot X to Project Y", "Show me available drones".
 - **Conflict Detection:** Automatically checks for:
     - **Hard Conflicts:** Maintenance, Certifications, Double Booking (Blocks assignment).
@@ -10,7 +10,7 @@ Skylark is an intelligent agent designed to help operations teams manage drone f
 - **Google Sheets Integration:** 2-way sync. Edit your roster in Sheets, and the AI sees it instantly.
 - **Urgent Reassignment:** Smart logic to suggest pulling pilots from lower-priority tasks for urgent missions.
 
-## 🏗️ Architecture
+## Architecture
 The system follows a "Brain-Body" separation:
 1.  **Frontend (Body):** Streamlit UI for chat and dashboard visualization.
 2.  **Brain (AgentLLM):** 
@@ -19,7 +19,7 @@ The system follows a "Brain-Body" separation:
 3.  **Logic Layer (Core):** Deterministic Python code (`logic.py`) that handles dates, boolean logic, and business rules.
 4.  **Data Layer:** connectors for Google Sheets (`data_manager.py`) with CSV fallback.
 
-## 🚀 Quick Start
+## Quick Start
 
 ### 1. Prerequisites
 - Python 3.9+
@@ -42,10 +42,11 @@ pip install -r requirements.txt
 streamlit run ui.py
 ```
 
-## 📂 Project Structure
+## Project Structure
 - `ui.py`: Main entry point (Frontend).
 - `agent_llm.py`: The AI Brain (NLU & Response).
 - `logic.py`: Business rules (Conflict checking, Matching).
 - `data_manager.py`: Handles CSV/Google Sheets I/O.
 - `api.py`: Optional REST API (for headless usage).
 - `sync_to_sheets.py`: Utility to upload local CSVs to Sheets.
+
