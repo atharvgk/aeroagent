@@ -3,3 +3,9 @@ pandas==2.2.0
 gspread==6.0.2
 oauth2client==4.1.3
 python-dateutil==2.8.2
+openai
+fastapi
+uvicorn
+requests
+python-dotenv
+watchfiles

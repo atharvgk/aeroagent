@@ -32,10 +32,10 @@ if "messages" not in st.session_state:
     # Initial greeting
     st.session_state.messages.append({"role": "assistant", "content": "Hello, I am **SkyOps AI**. How can I assist with your drone operations today?"})
 
-# Initialize Agent
-# We pass the local API URL. OpenRouter Key is loaded from .env by AgentLLM
+# Initialize Agent instance
+# We pass direct_mode=True so it works on Streamlit Cloud without the separate API server
 if "agent" not in st.session_state:
-    st.session_state.agent = AgentLLM(api_url="http://127.0.0.1:8000")
+    st.session_state.agent = AgentLLM(direct_mode=True)
 
 # --- Chat Interface ---
 st.title("SkyOps AI Coordinator")

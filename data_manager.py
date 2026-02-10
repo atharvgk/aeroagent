@@ -30,9 +30,24 @@ class DataManager:
                 client = gspread.authorize(creds)
                 self.sheet = client.open_by_key(SHEET_ID)
                 self.use_sheets = True
-                print("✅ Connected to Google Sheets")
+                print("✅ Connected to Google Sheets (Local)")
             except Exception as e:
                 print(f"⚠️ Google Sheets Connection Failed: {e}. Falling back to CSV.")
+        
+        # Streamlit Cloud Secrets Fallback
+        else:
+            try:
+                import streamlit as st
+                if "gcp_service_account" in st.secrets:
+                    scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+                    creds_dict = st.secrets["gcp_service_account"]
+                    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+                    client = gspread.authorize(creds)
+                    self.sheet = client.open_by_key(SHEET_ID)
+                    self.use_sheets = True
+                    print("✅ Connected to Google Sheets (Streamlit Secrets)")
+            except Exception:
+                print("⚠️ No credentials found (Local or Secrets). Falling back to CSV.")
         
         self.load_data()
 

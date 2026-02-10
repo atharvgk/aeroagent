@@ -72,49 +72,13 @@ def check_conflicts(req: ConflictCheckRequest):
 
 @app.post("/assign")
 def assign_resource(req: AssignmentRequest):
-    # 1. Check Conflicts
-    if req.resource_type == "pilot":
-        conflicts = logic.check_conflicts(req.project_id, pilot_id=req.resource_id)
-    else:
-        conflicts = logic.check_conflicts(req.project_id, drone_id=req.resource_id)
-        
-    hard_conflicts = [c for c in conflicts if c['severity'] == "HARD"]
-    soft_conflicts = [c for c in conflicts if c['severity'] == "SOFT"]
-    
-    # 2. Block on Hard Conflicts
-    if hard_conflicts:
-        return {
-            "success": False, 
-            "message": "Assignment blocked by HARD conflicts.", 
-            "conflicts": hard_conflicts
-        }
-    
-    # 3. Warning on Soft Conflicts (unless overridden)
-    if soft_conflicts and not req.override_soft_conflicts:
-        return {
-            "success": False,
-            "message": "Soft conflicts detected. Confirmation required.",
-            "conflicts": soft_conflicts,
-            "requires_confirmation": True
-        }
-        
-    # 4. Check for Explicit User Confirmation (Two-Step State Change)
-    if not req.confirm:
-         return {
-            "success": False,
-            "message": "Dry Run Successful. Please set confirm=True to execute.",
-            "conflicts": soft_conflicts if soft_conflicts else []
-        }
-
-    # 5. Execute
-    if req.resource_type == "pilot":
-        if dm.assign_pilot_to_mission(req.resource_id, req.project_id):
-            return {"success": True, "message": f"Assigned Pilot {req.resource_id} to {req.project_id}"}
-    else:
-        if dm.assign_drone_to_mission(req.resource_id, req.project_id):
-            return {"success": True, "message": f"Assigned Drone {req.resource_id} to {req.project_id}"}
-            
-    return {"success": False, "message": "Database update failed."}
+    return logic.assign_resource(
+        project_id=req.project_id,
+        resource_id=req.resource_id,
+        resource_type=req.resource_type,
+        confirm=req.confirm,
+        override_soft_conflicts=req.override_soft_conflicts
+    )
 
 @app.post("/reassign/suggest")
 def suggest_reassignments(req: ReassignmentRequest):

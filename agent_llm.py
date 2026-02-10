@@ -13,11 +13,21 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 load_dotenv()
 
 class AgentLLM:
-    def __init__(self, api_url="http://127.0.0.1:8000", openrouter_key=None):
+    def __init__(self, api_url="http://127.0.0.1:8000", openrouter_key=None, direct_mode=False):
         self.api_url = api_url
+        self.direct_mode = direct_mode
         # Prioritize passed arg, then env var
         self.api_key = openrouter_key or os.getenv("OPENROUTER_API_KEY")
         self.client = None
+        self.logic = None
+        
+        # In Direct Mode, we bypass the API and use Logic directly
+        if self.direct_mode:
+            from logic import Logic
+            from data_manager import DataManager
+            self.dm = DataManager()
+            self.logic = Logic(self.dm)
+            logging.info("Agent running in DIRECT MODE (No API)")
         
         if self.api_key:
             self.client = OpenAI(
@@ -54,11 +64,6 @@ class AgentLLM:
     def process_message(self, user_message):
         """
         Main entry point.
-        1. Try Regex NLU (Fast Path for Greetings)
-        2. Try LLM NLU
-        3. Fallback to Regex NLU
-        4. Call API
-        5. Generate AI Response (New!)
         """
         tool_call = self._nlu_layer(user_message)
         
@@ -123,30 +128,24 @@ class AgentLLM:
         if match:
              return {"tool": "suggest_reassignment", "project_id": match.group(1).upper(), "urgent": True}
         
-        # Available (Regex fallback logic still needs to be manual since we don't have LLM here)
-        # Query Pilots (Regex Fallback)
-        # We rely on the LLM for specific fields. Regex is just a safety net for basic status.
+        # Available/Generic Queries
         filters = {}
         
-        # Query Drones (Regex Fallback - Basic generic detection only)
+        # Query Drones
         if "drone" in clean_text:
-             # We can't safely extract generic filters with regex without hardcoding.
-             # So we just return an empty query (or basic status if obvious) and let the user handle it.
              filters = {}
              if "available" in clean_text: filters["status"] = "Available"
              if "maintenance" in clean_text: filters["status"] = "Maintenance"
              return {"tool": "query_drones", "filters": filters}
 
-        # Query Missions (Regex Fallback)
+        # Query Missions
         if "mission" in clean_text or "project" in clean_text:
              return {"tool": "query_missions", "filters": {}}
 
-        # Query Pilots (Regex Fallback - Default for "show available" etc if no other entity found)
-        # We REMOVE hardcoded skill/city checks to comply with Agentic rules.
+        # Query Pilots
         if "available" in clean_text or "show" in clean_text or "list" in clean_text or "who" in clean_text or "give" in clean_text or "all" in clean_text or "pilot" in clean_text:
              filters = {}
              if "available" in clean_text: filters["status"] = "Available"
-             # No more hardcoded "if 'bangalore': filters['location'] = 'Bangalore'"
              return {"tool": "query_pilots", "filters": filters}
 
         return None
@@ -157,9 +156,47 @@ class AgentLLM:
         try:
             tool = tool_call.get("tool")
             if tool == "general_chat":
-                # Return the LLM's generated reply
                 return {"message": tool_call.get("reply", "I am SkyOps AI.")}
 
+            # --- DIRECT MODE (No API) ---
+            if self.direct_mode:
+                if tool == "check_conflicts":
+                    return {"conflicts": self.logic.check_conflicts(
+                        tool_call.get("project_id"), 
+                        pilot_id=tool_call.get("pilot_id"), 
+                        drone_id=tool_call.get("drone_id")
+                    )}
+                elif tool == "find_matches":
+                    pid = tool_call.get("project_id", "").replace(" ", "").upper()
+                    return self.logic.find_matches(pid)
+                elif tool == "assign_pilot":
+                    return self.logic.assign_resource(
+                        project_id=tool_call.get("project_id"),
+                        resource_id=tool_call.get("pilot_id"),
+                        resource_type="pilot",
+                        confirm=tool_call.get("force", False),
+                        override_soft_conflicts=tool_call.get("force", False)
+                    )
+                elif tool == "assign_drone":
+                    return self.logic.assign_resource(
+                         project_id=tool_call.get("project_id"),
+                         resource_id=tool_call.get("drone_id"),
+                         resource_type="drone",
+                         confirm=tool_call.get("force", False),
+                         override_soft_conflicts=tool_call.get("force", False)
+                    )
+                elif tool == "suggest_reassignment":
+                    return {"suggestions": self.logic.suggest_reassignments(
+                        tool_call.get("project_id"), urgent_mode=tool_call.get("urgent", False)
+                    )}
+                elif tool == "query_pilots":
+                    return self.logic.query_pilots(tool_call.get("filters", {}))
+                elif tool == "query_drones":
+                    return self.logic.query_drones(tool_call.get("filters", {}))
+                elif tool == "query_missions":
+                    return self.logic.query_missions(tool_call.get("filters", {}))
+            
+            # --- API MODE (Legacy) ---
             if tool == "check_conflicts":
                 resp = requests.post(f"{self.api_url}/conflicts/check", json={
                     "project_id": tool_call.get("project_id"),

@@ -329,3 +329,48 @@ class Logic:
                  })
                  
         return candidates
+
+    def assign_resource(self, project_id, resource_id, resource_type, confirm=False, override_soft_conflicts=False):
+        # 1. Check Conflicts
+        if resource_type.lower() == "pilot":
+            conflicts = self.check_conflicts(project_id, pilot_id=resource_id)
+        else:
+            conflicts = self.check_conflicts(project_id, drone_id=resource_id)
+            
+        hard_conflicts = [c for c in conflicts if c['severity'] == "HARD"]
+        soft_conflicts = [c for c in conflicts if c['severity'] == "SOFT"]
+        
+        # 2. Block on Hard Conflicts
+        if hard_conflicts:
+            return {
+                "success": False, 
+                "message": "Assignment blocked by HARD conflicts.", 
+                "conflicts": hard_conflicts
+            }
+        
+        # 3. Warning on Soft Conflicts (unless overridden)
+        if soft_conflicts and not override_soft_conflicts:
+            return {
+                "success": False,
+                "message": "Soft conflicts detected. Confirmation required.",
+                "conflicts": soft_conflicts,
+                "requires_confirmation": True
+            }
+            
+        # 4. Check for Explicit User Confirmation (Two-Step State Change)
+        if not confirm:
+             return {
+                "success": False,
+                "message": "Dry Run Successful. Please set confirm=True to execute.",
+                "conflicts": soft_conflicts if soft_conflicts else []
+            }
+
+        # 5. Execute
+        if resource_type.lower() == "pilot":
+            if self.dm.assign_pilot_to_mission(resource_id, project_id):
+                return {"success": True, "message": f"Assigned Pilot {resource_id} to {project_id}"}
+        else:
+            if self.dm.assign_drone_to_mission(resource_id, project_id):
+                return {"success": True, "message": f"Assigned Drone {resource_id} to {project_id}"}
+                
+        return {"success": False, "message": "Database update failed."}
