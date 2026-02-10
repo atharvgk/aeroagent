@@ -1,46 +1,103 @@
 import pandas as pd
 import os
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# Get Sheet ID from env
+SHEET_ID = os.getenv("GOOGLE_SHEET_ID")
 
 class DataManager:
     def __init__(self, pilot_file="pilot_roster.csv", drone_file="drone_fleet.csv", missions_file="missions.csv"):
         self.pilot_file = pilot_file
         self.drone_file = drone_file
         self.missions_file = missions_file
+        self.use_sheets = False
+        self.sheet = None
+        
+        # Check if Sheet ID exists
+        if not SHEET_ID:
+            print("⚠️ GOOGLE_SHEET_ID not found in .env. Falling back to CSV.")
+        
+        # Try connecting to Google Sheets
+        elif os.path.exists("credentials.json"):
+            try:
+                scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+                creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
+                client = gspread.authorize(creds)
+                self.sheet = client.open_by_key(SHEET_ID)
+                self.use_sheets = True
+                print("✅ Connected to Google Sheets")
+            except Exception as e:
+                print(f"⚠️ Google Sheets Connection Failed: {e}. Falling back to CSV.")
+        
         self.load_data()
 
+    def _load_sheet_df(self, tab_name, required_cols):
+        try:
+            worksheet = self.sheet.worksheet(tab_name)
+            data = worksheet.get_all_records()
+            df = pd.DataFrame(data)
+            # Ensure all columns exist and are strings (to match CSV behavior)
+            for col in required_cols:
+                if col not in df.columns:
+                    df[col] = ""
+            return df.astype(str)
+        except Exception as e:
+            print(f"Error loading {tab_name} from Sheets: {e}")
+            return pd.DataFrame(columns=required_cols, dtype=str)
+
     def load_data(self):
-        # Load Pilots
-        try:
-            self.pilots = pd.read_csv(self.pilot_file, dtype=str)
-            # Ensure columns exist
-            required_pilot_cols = ["pilot_id", "name", "skills", "certifications", "location", "status", "current_assignment", "available_from"]
-            for col in required_pilot_cols:
-                if col not in self.pilots.columns:
-                    self.pilots[col] = ""
-        except Exception:
-            self.pilots = pd.DataFrame(columns=["pilot_id", "name", "skills", "certifications", "location", "status", "current_assignment", "available_from"], dtype=str)
+        # Define Columns
+        cols_pilots = ["pilot_id", "name", "skills", "certifications", "location", "status", "current_assignment", "available_from"]
+        cols_drones = ["drone_id", "model", "capabilities", "status", "location", "current_assignment", "maintenance_due"]
+        cols_missions = ["project_id", "client", "location", "required_skills", "required_certs", "start_date", "end_date", "priority"]
 
-        # Load Drones
-        try:
-            self.drones = pd.read_csv(self.drone_file, dtype=str)
-            required_drone_cols = ["drone_id", "model", "capabilities", "status", "location", "current_assignment", "maintenance_due"]
-            for col in required_drone_cols:
-                if col not in self.drones.columns:
-                    self.drones[col] = ""
-        except Exception:
-            self.drones = pd.DataFrame(columns=["drone_id", "model", "capabilities", "status", "location", "current_assignment", "maintenance_due"], dtype=str)
+        if self.use_sheets:
+            print("Loading data from Google Sheets...")
+            self.pilots = self._load_sheet_df("Pilots", cols_pilots)
+            self.drones = self._load_sheet_df("Drones", cols_drones)
+            self.missions = self._load_sheet_df("Missions", cols_missions)
+        else:
+            print("Loading data from local CSVs...")
+            self.pilots = self._load_csv(self.pilot_file, cols_pilots)
+            self.drones = self._load_csv(self.drone_file, cols_drones)
+            self.missions = self._load_csv(self.missions_file, cols_missions)
 
-        # Load Missions
+    def _load_csv(self, filename, required_cols):
         try:
-            self.missions = pd.read_csv(self.missions_file, dtype=str)
+            df = pd.read_csv(filename, dtype=str).fillna("")
+            for col in required_cols:
+                if col not in df.columns:
+                    df[col] = ""
+            return df
         except Exception:
-            self.missions = pd.DataFrame(columns=["project_id", "client", "location", "required_skills", "required_certs", "start_date", "end_date", "priority"], dtype=str)
+            return pd.DataFrame(columns=required_cols, dtype=str)
+
+    def _save_to_sheet(self, tab_name, df):
+        if not self.use_sheets: return
+        try:
+            worksheet = self.sheet.worksheet(tab_name)
+            worksheet.clear()
+            # method update requires [list of headers] + [list of rows]
+            worksheet.update([df.columns.values.tolist()] + df.values.tolist())
+        except Exception as e:
+            print(f"Error saving to {tab_name}: {e}")
 
     def save_pilots(self):
-        self.pilots.to_csv(self.pilot_file, index=False)
+        if self.use_sheets:
+            self._save_to_sheet("Pilots", self.pilots)
+        else:
+            self.pilots.to_csv(self.pilot_file, index=False)
 
     def save_drones(self):
-        self.drones.to_csv(self.drone_file, index=False)
+        if self.use_sheets:
+            self._save_to_sheet("Drones", self.drones)
+        else:
+            self.drones.to_csv(self.drone_file, index=False)
 
     def get_pilot(self, pilot_id):
         df = self.pilots[self.pilots['pilot_id'] == pilot_id]

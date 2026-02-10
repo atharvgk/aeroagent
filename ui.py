@@ -33,20 +33,9 @@ if "messages" not in st.session_state:
     st.session_state.messages.append({"role": "assistant", "content": "Hello, I am **SkyOps AI**. How can I assist with your drone operations today?"})
 
 # Initialize Agent
-# We pass the local API URL and the provided OpenRouter Key
-API_KEY = "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"
-
-with st.sidebar:
-    st.title("🚁 SkyOps Control")
-    st.success("AI Reasoning: Active 🟢")
-    
-    st.divider()
-    st.subheader("System Logs")
-    log_placeholder = st.empty()
-
-# Initialize Agent instance
+# We pass the local API URL. OpenRouter Key is loaded from .env by AgentLLM
 if "agent" not in st.session_state:
-    st.session_state.agent = AgentLLM(api_url="http://127.0.0.1:8000", openrouter_key=API_KEY)
+    st.session_state.agent = AgentLLM(api_url="http://127.0.0.1:8000")
 
 # --- Chat Interface ---
 st.title("SkyOps AI Coordinator")

@@ -4,14 +4,19 @@ import json
 import logging
 import requests
 from openai import OpenAI
+from dotenv import load_dotenv
 
 # Configure Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+# Load env vars
+load_dotenv()
+
 class AgentLLM:
     def __init__(self, api_url="http://127.0.0.1:8000", openrouter_key=None):
         self.api_url = api_url
-        self.api_key = openrouter_key
+        # Prioritize passed arg, then env var
+        self.api_key = openrouter_key or os.getenv("OPENROUTER_API_KEY")
         self.client = None
         
         if self.api_key:
@@ -129,6 +134,7 @@ class AgentLLM:
              # So we just return an empty query (or basic status if obvious) and let the user handle it.
              filters = {}
              if "available" in clean_text: filters["status"] = "Available"
+             if "maintenance" in clean_text: filters["status"] = "Maintenance"
              return {"tool": "query_drones", "filters": filters}
 
         # Query Missions (Regex Fallback)
@@ -224,9 +230,11 @@ class AgentLLM:
             
             YOUR JOB:
             - Answer the user's question using the Tool Result.
-            - Format the data exactly as requested (e.g. if they ask for "only names", list only names).
-            - If the result contains a list of items, format them nicely (markdown table or list).
-            - If the result indicates an error, explain it clearly.
+            - **PRIORITY 1**: If the Tool Result contains a specific message (e.g. "Hello!...", "Assignment Failed..."), use that as the core of your answer. Do not ignore it.
+            - **PRIORITY 2 (CONFLICTS)**: If the result lists conflicts or errors, list **ALL** of them (Type, Severity, Message) as bullet points.
+            - **REQUIRED: CONFLICT SUMMARY**: At the very end of the conflict list, add a single bold line: "**Recommendation:** [One sentence summary of how to resolve this]."
+            - **PRIORITY 3 (EMPTY RESULT)**: If the tool result is an empty list `[]` or says "No ... found", clearly state "No results found matching your criteria."
+            - **PRIORITY 4 (CANCELLATION)**: ONLY if the User's Query STARTS WITH a clear refusal (e.g. "no", "cancel", "stop", "don't") AND the tool result is generic/empty, THEN reply with: "Action cancelled. How else can I help?"
             - Be concise professional.
             """
             
