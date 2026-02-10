@@ -4,7 +4,7 @@ from data_manager import DataManager
 from logic import Logic
 from agent import Agent
 
-st.set_page_config(page_title="Skylark Drones Agent", layout="wide")
+st.set_page_config(page_title="AeroAgent AI", layout="wide")
 
 @st.cache_resource
 def get_system():
@@ -15,7 +15,7 @@ def get_system():
 
 dm, logic, agent = get_system()
 
-st.title("🚁 Skylark Drone Ops Coordinator")
+st.title("🚁 AeroAgent Drone Ops Coordinator")
 
 # Sidebar for Data Preview
 with st.sidebar:

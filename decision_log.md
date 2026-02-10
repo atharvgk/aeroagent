@@ -1,4 +1,4 @@
-# Decision Log - Skylark Drones Agent
+# AeroAgent - Decision Log
 
 ## 1. Key Assumptions
 

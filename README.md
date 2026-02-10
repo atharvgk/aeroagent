@@ -1,6 +1,6 @@
-# Skylark - AI Drone Operations Coordinator
+# AeroAgent - AI Drone Operations Coordinator
 
-Skylark is an intelligent agent designed to help operations teams manage drone fleets, pilots, and missions. It uses a **Hybrid AI Architecture** combining the natural language understanding of LLMs with the safety and precision of deterministic code.
+AeroAgent is an intelligent agent designed to help operations teams manage drone fleets, pilots, and missions. It uses a **Hybrid AI Architecture** combining the natural language understanding of LLMs with the safety and precision of deterministic code.
 
 ## Features
 - **Natural Language Command:** "Assign Pilot X to Project Y", "Show me available drones".

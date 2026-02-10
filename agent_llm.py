@@ -38,7 +38,7 @@ class AgentLLM:
             logging.warning("No OpenRouter API Key provided. Agent will run in Fallback Mode (Regex only).")
 
         self.system_prompt = """
-        You are SkyOps AI, a Drone Operations Coordinator.
+        You are AeroAgent, a Drone Operations Coordinator.
         Your goal is to help users manage pilots, drones, and missions.
         
         You have access to a deterministic operational system.
@@ -86,7 +86,7 @@ class AgentLLM:
         
         # 1. Fast Path: General Chat (Strict Check)
         if re.search(r"\b(hello|hi|hey|greetings)\b", clean_text) and len(clean_text) < 20:
-             return {"tool": "general_chat", "reply": "Hello! SkyOps AI online. How can I help?"}
+             return {"tool": "general_chat", "reply": "Hello! AeroAgent online. How can I help?"}
 
         # 2. Try LLM
         if self.client:
@@ -156,7 +156,7 @@ class AgentLLM:
         try:
             tool = tool_call.get("tool")
             if tool == "general_chat":
-                return {"message": tool_call.get("reply", "I am SkyOps AI.")}
+                return {"message": tool_call.get("reply", "I am AeroAgent.")}
 
             # --- DIRECT MODE (No API) ---
             if self.direct_mode:
@@ -259,7 +259,7 @@ class AgentLLM:
         """
         try:
             system_msg = """
-            You are SkyOps AI. You have just executed an operational tool based on the user's request.
+            You are AeroAgent. You have just executed an operational tool based on the user's request.
             
             INPUT CONTEXT:
             1. User's Original Query
