@@ -1,71 +1,51 @@
-# 🚁 Skylark Drone Operations Coordinator (SkyOps AI)
+# 🚁 Skylark - AI Drone Operations Coordinator
 
-## Overview
-SkyOps AI is a **Hybrid Agent** designed to assist drone operations managers. It combines:
-1.  **Deterministic Logic (FastAPI)**: For strict safety checks, conflict detection, and roster management.
-2.  **LLM Reasoning (OpenRouter)**: For natural language understanding and explaining operational trade-offs.
-3.  **Interactive UI (Streamlit)**: A chat-based interface for easy interaction.
+Skylark is an intelligent agent designed to help operations teams manage drone fleets, pilots, and missions. It uses a **Hybrid AI Architecture** combining the natural language understanding of LLMs with the safety and precision of deterministic code.
 
-## Features
-- **Roster Management**: Query pilot status, location, and skills.
-- **Assignment**: Assign pilots/drones with automatic conflict checking.
-- **Conflict Detection**: Detects double-booking, missing certs, and maintenance issues.
-- **Urgent Reassignment**: AI-driven suggestions to move resources from lower-priority missions.
+## 🌟 Features
+- **Natural Language Command:** "Assign Pilot X to Project Y", "Show me available drones".
+- **Conflict Detection:** Automatically checks for:
+    - **Hard Conflicts:** Maintenance, Certifications, Double Booking (Blocks assignment).
+    - **Soft Conflicts:** Location mismatch, Skill mismatch (Requires confirmation).
+- **Google Sheets Integration:** 2-way sync. Edit your roster in Sheets, and the AI sees it instantly.
+- **Urgent Reassignment:** Smart logic to suggest pulling pilots from lower-priority tasks for urgent missions.
 
-## Architecture
-- **Backend**: Python, FastAPI (`api.py`)
-- **Frontend**: Streamlit (`ui.py`)
-- **AI**: OpenRouter API (`agent_llm.py`)
-- **Data**: Local CSVs (`data_manager.py`)
+## 🏗️ Architecture
+The system follows a "Brain-Body" separation:
+1.  **Frontend (Body):** Streamlit UI for chat and dashboard visualization.
+2.  **Brain (AgentLLM):** 
+    - **NLU:** Classifies user intent (e.g., `assign_pilot`, `check_conflicts`) using GPT-4o-mini / OpenRouter.
+    - **NLG:** Generates human-friendly responses from data.
+3.  **Logic Layer (Core):** Deterministic Python code (`logic.py`) that handles dates, boolean logic, and business rules.
+4.  **Data Layer:** connectors for Google Sheets (`data_manager.py`) with CSV fallback.
 
-## Setup & Installation
+## 🚀 Quick Start
 
-1.  **Install Dependencies**:
-    ```bash
-    pip install -r requirements.txt
-    ```
+### 1. Prerequisites
+- Python 3.9+
+- A Google Cloud Project with Sheets API enabled (or use local CSVs).
+- OpenRouter API Key.
 
-2.  **Configuration**:
-    - The agent works in **Regex Fallback Mode** by default.
-    - To enable AI reasoning, enter your **OpenRouter API Key** in the sidebar.
-
-## How to Run
-
-### Method 1: Automatic Script (Recommended)
-Double-click `run_app.bat` or run it from the terminal:
-```powershell
-.\run_app.bat
+### 2. Installation
+```bash
+git clone https://github.com/atharvgk/aeroagent.git
+cd aeroagent
+pip install -r requirements.txt
 ```
-This will launch both the backend server and the frontend UI automatically.
 
-### Method 2: Manual Start
-1.  **Start Backend** (Terminal 1):
-    ```bash
-    uvicorn api:app --reload --port 8000
-    ```
-2.  **Start Frontend** (Terminal 2):
-    ```bash
-    streamlit run ui.py
-    ```
+### 3. Setup Credentials (Google Sheets)
+1.  Place your `gcp_service_account` credentials in `.streamlit/secrets.toml` (for Cloud) or `credentials.json` (for Local).
+2.  Set `OPENROUTER_API_KEY` in `.env` or Secrets.
 
-## Usage Guide
-- **Ask**: "Who is available in Bangalore?"
-- **Assign**: "Assign P001 to PRJ001"
-- **Urgent**: "Help with urgent mission PRJ002"
-- **Override**: If checking for soft conflicts (like location mismatch), type "Override" in your request to force it.
-3.  The app will automatically detect the credentials and switch to Sheets mode.
-4.  (Note: You may need to configure the specific Sheet names in `data_manager.py` depending on your setup).
+### 4. Run Locally
+```bash
+streamlit run ui.py
+```
 
-## Features implemented
-
--   **Assignment**: Assign pilots to missions with conflict checks.
--   **Conflict Detection**: Auto-detects overlaps, skill mismatches, and maintenance issues.
--   **Urgent Reassignments**: Suggests "bumping" pilots from lower-priority missions for Urgent tasks.
-
-## Files
-
--   `app.py`: Main application entry point.
--   `agent.py`: NLU and intent processing.
--   `logic.py`: Core business logic (conflicts, matching).
--   `data_manager.py`: Data persistence layer.
--   `decision_log.md`: Usage and design decisions.
+## 📂 Project Structure
+- `ui.py`: Main entry point (Frontend).
+- `agent_llm.py`: The AI Brain (NLU & Response).
+- `logic.py`: Business rules (Conflict checking, Matching).
+- `data_manager.py`: Handles CSV/Google Sheets I/O.
+- `api.py`: Optional REST API (for headless usage).
+- `sync_to_sheets.py`: Utility to upload local CSVs to Sheets.
