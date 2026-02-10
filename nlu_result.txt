@@ -1,0 +1,4 @@
+Query: give pilots with dgca certificate
+NLU Tool Call: {'tool': 'search_availability', 'status': 'All'}
+Tool Result Type: <class 'list'>
+First Pilot: {'pilot_id': 'P001', 'name': 'Arjun', 'skills': 'Mapping, Survey', 'certifications': 'DGCA, Night Ops', 'location': 'Bangalore', 'status': 'Available', 'current_assignment': '–', 'available_from': '2026-02-05'}

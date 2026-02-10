@@ -7,177 +7,325 @@ class Logic:
         self.dm = data_manager
 
     def parse_skills(self, skills_str):
-        if pd.isna(skills_str):
+        if pd.isna(skills_str) or str(skills_str).strip() == "":
             return []
         return [s.strip().lower() for s in str(skills_str).split(',')]
 
     def check_conflicts(self, project_id, pilot_id=None, drone_id=None):
+        """
+        Returns a list of conflict dictionaries:
+        {
+            "type": str,
+            "severity": "HARD" | "SOFT",
+            "message": str,
+            "can_override": bool
+        }
+        """
         conflicts = []
         
         # Get Mission Details
-        mission = self.dm.missions[self.dm.missions['project_id'] == project_id]
-        if mission.empty:
-            return ["Mission not found"]
-        mission = mission.iloc[0]
-        mission_start = parser.parse(str(mission['start_date']))
-        mission_end = parser.parse(str(mission['end_date']))
+        mission = self.dm.get_mission(project_id)
+        if not mission:
+            return [{"type": "DATA_ERROR", "severity": "HARD", "message": f"Mission {project_id} not found", "can_override": False}]
+            
+        try:
+            mission_start = parser.parse(str(mission.get('start_date', '')))
+            mission_end = parser.parse(str(mission.get('end_date', '')))
+        except:
+             return [{"type": "DATA_ERROR", "severity": "HARD", "message": f"Invalid dates for Mission {project_id}", "can_override": False}]
 
-        # Check Pilot Conflicts
+        # --- PILOT CHECKS ---
         if pilot_id:
-            pilot = self.dm.pilots[self.dm.pilots['pilot_id'] == pilot_id]
-            if not pilot.empty:
-                pilot = pilot.iloc[0]
-                
-                # Check 1: Status (if already assigned to ANOTHER project active at same time)
-                # For simplicity in this CSV model, 'current_assignment' is a single field.
-                # In a real DB, we'd check an 'assignments' table for overlaps.
-                # Here we check if they are 'Available' or if their current assignment is not this one (reassignment context)
+            pilot = self.dm.get_pilot(pilot_id)
+            if not pilot:
+                 conflicts.append({"type": "DATA_ERROR", "severity": "HARD", "message": f"Pilot {pilot_id} not found", "can_override": False})
+            else:
+                # 1. Status Check
                 if pilot['status'] == 'On Leave':
-                    conflicts.append(f"Pilot {pilot['name']} is On Leave.")
-                
-                if pilot['current_assignment'] != '–' and pilot['current_assignment'] != project_id:
-                    # Check overlap with existing assignment
-                    # In this simple model (referenced CSVs), we assume 'current_assignment' implies active NOW or SOON.
-                    # We should check the dates of the *other* project they are assigned to.
-                    other_proj = self.dm.missions[self.dm.missions['project_id'] == pilot['current_assignment']]
-                    if not other_proj.empty:
-                        other_proj = other_proj.iloc[0]
-                        other_start = parser.parse(str(other_proj['start_date']))
-                        other_end = parser.parse(str(other_proj['end_date']))
-                        
-                        # Check Date Overlap
-                        if (mission_start <= other_end) and (mission_end >= other_start):
-                            conflicts.append(f"Pilot {pilot['name']} is already assigned to {pilot['current_assignment']} during these dates.")
+                    conflicts.append({"type": "UNAVAILABLE", "severity": "HARD", "message": f"Pilot {pilot['name']} is On Leave.", "can_override": False})
+                elif pilot['status'] == 'Unavailable':
+                    conflicts.append({"type": "UNAVAILABLE", "severity": "HARD", "message": f"Pilot {pilot['name']} is Unavailable.", "can_override": False})
 
-                # Check 2: Skills & Certs
-                req_skills = self.parse_skills(mission['required_skills'])
-                pilot_skills = self.parse_skills(pilot['skills'])
-                missing_skills = [s for s in req_skills if s not in pilot_skills]
-                if missing_skills:
-                    conflicts.append(f"Pilot {pilot['name']} missing skills: {', '.join(missing_skills)}")
+                # 2. Double Booking
+                if pilot['current_assignment'] and pilot['current_assignment'] != '–' and pilot['current_assignment'] != project_id:
+                     other_proj = self.dm.get_mission(pilot['current_assignment'])
+                     if other_proj:
+                        try:
+                            other_start = parser.parse(str(other_proj['start_date']))
+                            other_end = parser.parse(str(other_proj['end_date']))
+                            if (mission_start <= other_end) and (mission_end >= other_start):
+                                conflicts.append({
+                                    "type": "DOUBLE_BOOKING", 
+                                    "severity": "HARD", 
+                                    "message": f"Pilot {pilot['name']} is assigned to {pilot['current_assignment']} during these dates.", 
+                                    "can_override": False
+                                })
+                        except:
+                            pass # Date error handled elsewhere
 
-                req_certs = self.parse_skills(mission['required_certs'])
-                pilot_certs = self.parse_skills(pilot['certifications'])
+                # 3. Certification (HARD)
+                req_certs = self.parse_skills(mission.get('required_certs', ''))
+                pilot_certs = self.parse_skills(pilot.get('certifications', ''))
                 missing_certs = [c for c in req_certs if c not in pilot_certs]
                 if missing_certs:
-                    conflicts.append(f"Pilot {pilot['name']} missing certs: {', '.join(missing_certs)}")
-                    
-                # Check 3: Location (Warning only)
+                    conflicts.append({
+                        "type": "CERTIFICATION_MISSING", 
+                        "severity": "HARD", 
+                        "message": f"Pilot {pilot['name']} missing required certs: {', '.join(missing_certs)}", 
+                        "can_override": False
+                    })
+
+                # 4. Skills (SOFT - Explicit override required)
+                req_skills = self.parse_skills(mission.get('required_skills', ''))
+                pilot_skills = self.parse_skills(pilot.get('skills', ''))
+                missing_skills = [s for s in req_skills if s not in pilot_skills]
+                if missing_skills:
+                    conflicts.append({
+                        "type": "SKILL_MISMATCH", 
+                        "severity": "SOFT", 
+                        "message": f"Pilot {pilot['name']} missing preferred skills: {', '.join(missing_skills)}", 
+                        "can_override": True
+                    })
+
+                # 5. Location (SOFT)
                 if pilot['location'] != mission['location']:
-                    conflicts.append(f"WARNING: Pilot {pilot['name']} is in {pilot['location']}, mission is in {mission['location']}.")
+                     conflicts.append({
+                        "type": "LOCATION_MISMATCH", 
+                        "severity": "SOFT", 
+                        "message": f"Pilot {pilot['name']} is in {pilot['location']}, mission is in {mission['location']}.", 
+                        "can_override": True
+                    })
 
-        # Check Drone Conflicts
+        # --- DRONE CHECKS ---
         if drone_id:
-            drone = self.dm.drones[self.dm.drones['drone_id'] == drone_id]
-            if not drone.empty:
-                drone = drone.iloc[0]
-                
+            drone = self.dm.get_drone(drone_id)
+            if not drone:
+                conflicts.append({"type": "DATA_ERROR", "severity": "HARD", "message": f"Drone {drone_id} not found", "can_override": False})
+            else:
+                # 1. Maintenance (HARD)
                 if drone['status'] == 'Maintenance':
-                    conflicts.append(f"Drone {drone['model']} is in Maintenance.")
-
-                if drone['current_assignment'] != '–' and drone['current_assignment'] != project_id:
-                     other_proj = self.dm.missions[self.dm.missions['project_id'] == drone['current_assignment']]
-                     if not other_proj.empty:
-                        other_proj = other_proj.iloc[0]
-                        other_start = parser.parse(str(other_proj['start_date']))
-                        other_end = parser.parse(str(other_proj['end_date']))
-                        if (mission_start <= other_end) and (mission_end >= other_start):
-                            conflicts.append(f"Drone {drone['model']} is already assigned to {drone['current_assignment']}.")
-                            
-                # Check Maintenance Date
-                maint_date = parser.parse(str(drone['maintenance_due']))
-                if maint_date < mission_end:
-                     conflicts.append(f"WARNING: Drone {drone['model']} maintenance due ({drone['maintenance_due']}) before mission end.")
-
-                # Check 4: Location (Warning only)
-                if drone['location'] != mission['location']:
-                    conflicts.append(f"WARNING: Drone {drone['model']} is in {drone['location']}, mission is in {mission['location']}.")
+                    conflicts.append({"type": "MAINTENANCE", "severity": "HARD", "message": f"Drone {drone['model']} is in Maintenance.", "can_override": False})
                 
-                # Check 5: Pilot-Drone Location Mismatch (if pilot is also assigned/checked)
+                # Check Maintenance Due Date
+                try:
+                    maint_date = parser.parse(str(drone['maintenance_due']))
+                    if maint_date < mission_end:
+                        conflicts.append({"type": "MAINTENANCE_DUE", "severity": "HARD", "message": f"Drone {drone['model']} maintenance due ({drone['maintenance_due']}) before mission ends.", "can_override": False})
+                except:
+                    pass
+
+                # 2. Double Booking (HARD)
+                if drone['current_assignment'] and drone['current_assignment'] != '–' and drone['current_assignment'] != project_id:
+                     other_proj = self.dm.get_mission(drone['current_assignment'])
+                     if other_proj:
+                        try:
+                            other_start = parser.parse(str(other_proj['start_date']))
+                            other_end = parser.parse(str(other_proj['end_date']))
+                            if (mission_start <= other_end) and (mission_end >= other_start):
+                                conflicts.append({
+                                    "type": "DOUBLE_BOOKING", 
+                                    "severity": "HARD", 
+                                    "message": f"Drone {drone['model']} is assigned to {drone['current_assignment']}.", 
+                                    "can_override": False
+                                })
+                        except: pass
+
+                # 3. Location (SOFT)
+                if drone['location'] != mission['location']:
+                    conflicts.append({
+                        "type": "LOCATION_MISMATCH", 
+                        "severity": "SOFT", 
+                        "message": f"Drone {drone['model']} is in {drone['location']}, mission is in {mission['location']}.", 
+                        "can_override": True
+                    })
+
+                # 4. Pilot-Drone Mismatch (CRITICAL/HARD?) - Let's make it HARD for safety
                 if pilot_id:
-                    pilot = self.dm.pilots[self.dm.pilots['pilot_id'] == pilot_id].iloc[0]
-                    if pilot['location'] != drone['location']:
-                        conflicts.append(f"CRITICAL: Pilot {pilot['name']} ({pilot['location']}) and Drone {drone['model']} ({drone['location']}) are in different locations.")
+                     pilot = self.dm.get_pilot(pilot_id)
+                     if pilot and pilot['location'] != drone['location']:
+                         conflicts.append({
+                            "type": "LOCATION_MISMATCH", 
+                            "severity": "HARD", 
+                            "message": f"Pilot ({pilot['location']}) and Drone ({drone['location']}) are in different locations.", 
+                            "can_override": False
+                        })
 
         return conflicts
 
+    def query_pilots(self, filters):
+        """
+        Generic filter for pilots.
+        filters: dict of {column: value}
+        """
+        df = self.dm.pilots.copy()
+        
+        for key, value in filters.items():
+            if key not in df.columns:
+                continue
+                
+            val_str = str(value).lower().strip()
+            if not val_str: continue # Ignore empty filters
+            
+            # Special handling for list-like columns
+            if key in ['skills', 'certifications']:
+                # Partial match: checks if filter value is present in the comma-separated string
+                df = df[df[key].str.lower().str.contains(val_str, na=False)]
+            else:
+                # Exact match (case-insensitive)
+                df = df[df[key].str.lower() == val_str]
+                
+        return df.to_dict(orient='records')
+
+    def query_drones(self, filters):
+        """
+        Generic filter for drones.
+        filters: dict of {column: value}
+        """
+        df = self.dm.drones.copy()
+        for key, value in filters.items():
+            if key not in df.columns:
+                continue
+            val_str = str(value).lower().strip()
+            if not val_str: continue # Ignore empty filters
+
+            # Partial match for capabilities
+            if key in ['capabilities']:
+                df = df[df[key].str.lower().str.contains(val_str, na=False)]
+            else:
+                df = df[df[key].str.lower() == val_str]
+        return df.to_dict(orient='records')
+
+    def query_missions(self, filters):
+        """
+        Generic filter for missions.
+        """
+        df = self.dm.missions.copy()
+        for key, value in filters.items():
+             if key not in df.columns:
+                continue
+             val_str = str(value).lower().strip()
+             if not val_str: continue # Ignore empty filters
+             
+             if key in ['required_skills', 'required_certs']:
+                 df = df[df[key].str.lower().str.contains(val_str, na=False)]
+             else:
+                 df = df[df[key].str.lower() == val_str]
+        return df.to_dict(orient='records')
+
     def find_matches(self, project_id):
-        mission = self.dm.missions[self.dm.missions['project_id'] == project_id]
-        if mission.empty:
-            return [], []
+        mission = self.dm.get_mission(project_id)
+        if not mission: return {"pilots": [], "drones": []}
         
-        mission = mission.iloc[0]
         req_skills = self.parse_skills(mission['required_skills'])
         req_certs = self.parse_skills(mission['required_certs'])
         
-        # Find Pilots
-        suitable_pilots = []
+        candidates = []
         for _, pilot in self.dm.pilots.iterrows():
-            pilot_skills = self.parse_skills(pilot['skills'])
-            pilot_certs = self.parse_skills(pilot['certifications'])
+            pilot = pilot.to_dict()
+            score = 0
+            issues = []
+            eligible = True
             
-            # Basic skill check
-            if all(s in pilot_skills for s in req_skills) and all(c in pilot_certs for c in req_certs):
-                # Check availability (naive check for now, real check should verify dates)
-                # We prioritize those Available
-                suitable_pilots.append(pilot)
-                
-        # Find Drones
-        suitable_drones = []
-        # Logic for drones depends on capabilities. Assuming mission 'required_skills' maps to drone capabilities mostly for 'Thermal', 'Mapping' (LiDAR) etc.
-        # This is an assumption. Let's map keywords.
-        req_caps = []
-        if 'thermal' in req_skills: req_caps.append('thermal')
-        if 'mapping' in req_skills: req_caps.append('lidar') # Assuming Mapping -> LiDAR often? Or just RGB? Let's check fleet.
-        
-        for _, drone in self.dm.drones.iterrows():
-            drone_caps = self.parse_skills(drone['capabilities'])
-            if all(c in drone_caps for c in req_caps):
-                 suitable_drones.append(drone)
-                 
-        return pd.DataFrame(suitable_pilots), pd.DataFrame(suitable_drones)
-
-    def suggest_reassignments(self, project_id):
-        """
-        Suggests pilots/drones to reassign from lower priority missions
-        if no one is available for this urgent mission.
-        """
-        mission = self.dm.missions[self.dm.missions['project_id'] == project_id]
-        if mission.empty:
-            return []
-        
-        mission = mission.iloc[0]
-        if mission['priority'] != 'Urgent':
-            return ["Mission is not Urgent. Use standard assignment."]
-
-        req_skills = self.parse_skills(mission['required_skills'])
-        req_certs = self.parse_skills(mission['required_certs'])
-
-        suggestions = []
-        
-        # Look for pilots currently assigned to LOWER priority missions
-        # We need to look at ALL pilots, check if they match skills, 
-        # and if they are assigned, check the priority of that assignment.
-        for _, pilot in self.dm.pilots.iterrows():
-            # Check skills first
-            pilot_skills = self.parse_skills(pilot['skills'])
-            pilot_certs = self.parse_skills(pilot['certifications'])
+            # 1. Certifications Check (Critical)
+            p_certs = self.parse_skills(pilot['certifications'])
+            missing_certs = [c for c in req_certs if c not in p_certs]
+            if missing_certs:
+                eligible = False
+                issues.append(f"Missing Certs: {', '.join(missing_certs)}")
+                score -= 50
+            else:
+                score += 50
             
-            if not (all(s in pilot_skills for s in req_skills) and all(c in pilot_certs for c in req_certs)):
-                continue
+            # 2. Location Check (Important but maybe overrideable?)
+            # Strictly speaking, for "Best Pilot", we prefer location match.
+            if pilot['location'] != mission['location']:
+                eligible = False # Mark ineligible for "perfect match", but keep in list
+                issues.append(f"Location mismatch ({pilot['location']})")
+                score -= 30
+            else:
+                score += 30
+            
+            # 3. Skills Check (Desirable)
+            p_skills = self.parse_skills(pilot['skills'])
+            missing_skills = [s for s in req_skills if s not in p_skills]
+            if missing_skills:
+                 score -= 10 * len(missing_skills)
+                 issues.append(f"Missing Skills: {', '.join(missing_skills)}")
+            else:
+                 score += 20
 
-            # If available, we shouldn't be asking for reassignment (unless we missed them)
+            # 4. Status Check
             if pilot['status'] == 'Available':
-                continue
-                
-            # If assigned, check usage
-            if pilot['current_assignment'] != '–':
-                curr_proj_id = pilot['current_assignment']
-                curr_proj = self.dm.missions[self.dm.missions['project_id'] == curr_proj_id]
-                if not curr_proj.empty:
-                    curr_proj = curr_proj.iloc[0]
-                    # If current project is NOT Urgent (e.g. High or Standard), suggest pulling them
-                    if curr_proj['priority'] != 'Urgent':
-                        suggestions.append(f"Reassign Pilot {pilot['name']} ({pilot['pilot_id']}) from {curr_proj_id} ({curr_proj['priority']})")
+                score += 20
+            elif pilot['status'] == 'On Leave':
+                eligible = False
+                issues.append("Pilot On Leave")
+                score -= 100
+            elif pilot['status'] == 'Assigned':
+                eligible = False
+                issues.append(f"Already Assigned ({pilot.get('current_assignment', '')})")
+                score -= 50
+
+            candidates.append({
+                "id": pilot['pilot_id'],
+                "name": pilot['name'],
+                "score": score,
+                "location": pilot['location'],
+                "status": pilot['status'],
+                "eligible": eligible,
+                "issues": issues,
+                "certifications": pilot['certifications'],
+                "skills": pilot['skills']
+            })
+            
+        # Sort by Score (Higher is better)
+        candidates.sort(key=lambda x: x['score'], reverse=True)
         
-        return suggestions
+        # Return top 5, or more if needed
+        return {"pilots": candidates[:5], "mission_id": project_id}
+
+    def suggest_reassignments(self, project_id, urgent_mode=False):
+        """
+        Returns candidates for reassignment.
+        Only returns if urgent_mode is True or priority matches.
+        """
+        mission = self.dm.get_mission(project_id)
+        if not mission: return []
+        
+        if mission['priority'] != 'Urgent' and not urgent_mode:
+            return []
+
+        candidates = []
+        req_skills = self.parse_skills(mission['required_skills'])
+        req_certs = self.parse_skills(mission['required_certs'])
+        
+        for _, pilot in self.dm.pilots.iterrows():
+            pilot = pilot.to_dict()
+            
+            # Only look at assigned pilots
+            if pilot['current_assignment'] == '–': continue
+            
+            # Check basic qualifications (Hard constraints)
+            p_certs = self.parse_skills(pilot['certifications'])
+            if not all(c in p_certs for c in req_certs): continue
+            
+            curr_proj = self.dm.get_mission(pilot['current_assignment'])
+            if not curr_proj: continue
+            
+            # Reassignment Logic
+            # We can bump if current project priority is LOWER than new project priority
+            # Urgent > High > Standard > Low
+            priority_rank = {"Urgent": 4, "High": 3, "Standard": 2, "Low": 1}
+            mys_prio = priority_rank.get(mission['priority'], 1)
+            cur_prio = priority_rank.get(curr_proj['priority'], 1)
+            
+            if mys_prio > cur_prio:
+                 candidates.append({
+                     "pilot_id": pilot['pilot_id'],
+                     "name": pilot['name'],
+                     "current_assignment": pilot['current_assignment'],
+                     "current_priority": curr_proj['priority'],
+                     "location_match": pilot['location'] == mission['location']
+                 })
+                 
+        return candidates

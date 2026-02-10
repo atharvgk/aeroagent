@@ -1,39 +1,63 @@
-# Skylark Drone Operations Coordinator Agent
+# 🚁 Skylark Drone Operations Coordinator (SkyOps AI)
 
-This is an AI agent designed to help Drone Operations Coordinators manage pilots, drones, and missions.
+## Overview
+SkyOps AI is a **Hybrid Agent** designed to assist drone operations managers. It combines:
+1.  **Deterministic Logic (FastAPI)**: For strict safety checks, conflict detection, and roster management.
+2.  **LLM Reasoning (OpenRouter)**: For natural language understanding and explaining operational trade-offs.
+3.  **Interactive UI (Streamlit)**: A chat-based interface for easy interaction.
+
+## Features
+- **Roster Management**: Query pilot status, location, and skills.
+- **Assignment**: Assign pilots/drones with automatic conflict checking.
+- **Conflict Detection**: Detects double-booking, missing certs, and maintenance issues.
+- **Urgent Reassignment**: AI-driven suggestions to move resources from lower-priority missions.
 
 ## Architecture
+- **Backend**: Python, FastAPI (`api.py`)
+- **Frontend**: Streamlit (`ui.py`)
+- **AI**: OpenRouter API (`agent_llm.py`)
+- **Data**: Local CSVs (`data_manager.py`)
 
--   **Frontend**: Streamlit (Reactive UI).
--   **Backend**: Python.
--   **Data Layer**: Dual-mode (CSV default, Google Sheets optional).
--   **Agent Logic**: Regex-based intent parsing (Deterministic & Fast).
-
-## Setup & Running
+## Setup & Installation
 
 1.  **Install Dependencies**:
     ```bash
     pip install -r requirements.txt
     ```
 
-2.  **Run the Application**:
+2.  **Configuration**:
+    - The agent works in **Regex Fallback Mode** by default.
+    - To enable AI reasoning, enter your **OpenRouter API Key** in the sidebar.
+
+## How to Run
+
+### Method 1: Automatic Script (Recommended)
+Double-click `run_app.bat` or run it from the terminal:
+```powershell
+.\run_app.bat
+```
+This will launch both the backend server and the frontend UI automatically.
+
+### Method 2: Manual Start
+1.  **Start Backend** (Terminal 1):
     ```bash
-    streamlit run app.py
+    uvicorn api:app --reload --port 8000
+    ```
+2.  **Start Frontend** (Terminal 2):
+    ```bash
+    streamlit run ui.py
     ```
 
-3.  **Access**: Open your browser at `http://localhost:8501`.
-
-## Google Sheets Integration
-
-To enable 2-way sync with Google Sheets:
-1.  Place your `credentials.json` (Service Account key) in this directory.
-2.  Ensure the service account has access to your sheets.
+## Usage Guide
+- **Ask**: "Who is available in Bangalore?"
+- **Assign**: "Assign P001 to PRJ001"
+- **Urgent**: "Help with urgent mission PRJ002"
+- **Override**: If checking for soft conflicts (like location mismatch), type "Override" in your request to force it.
 3.  The app will automatically detect the credentials and switch to Sheets mode.
 4.  (Note: You may need to configure the specific Sheet names in `data_manager.py` depending on your setup).
 
 ## Features implemented
 
--   **Roster Management**: View & Update pilot status.
 -   **Assignment**: Assign pilots to missions with conflict checks.
 -   **Conflict Detection**: Auto-detects overlaps, skill mismatches, and maintenance issues.
 -   **Urgent Reassignments**: Suggests "bumping" pilots from lower-priority missions for Urgent tasks.

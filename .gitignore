@@ -9,3 +9,7 @@ env/
 venv/
 submission.zip
 *.spec
+*.csv
+debuc_nlu.py
+debug_log.txt
+test_generic.py
